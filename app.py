@@ -37,6 +37,7 @@ def scan_url():
         }), 400
 
     url = str(data["url"]).strip()
+    print("URL received from frontend:", repr(url))
 
     if not url:
         return jsonify({
