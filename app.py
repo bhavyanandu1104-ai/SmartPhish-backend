@@ -37,6 +37,7 @@ def scan_url():
         }), 400
 
     url = str(data["url"]).strip()
+
     print("URL received from frontend:", repr(url))
 
     if not url:
@@ -45,24 +46,19 @@ def scan_url():
             "error": "URL cannot be empty."
         }), 400
 
-    # Add HTTPS if the user did not enter a protocol
+    # Add HTTPS only when the user did not provide a protocol
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
 
-    # Validate URL format
-    try:
-        parsed = urlparse(url)
+    print("URL sent to VirusTotal:", repr(url))
 
-        if not parsed.scheme or not parsed.netloc:
-            return jsonify({
-                "success": False,
-                "error": "Please enter a valid website URL."
-            }), 400
+    # Validate URL
+    parsed = urlparse(url)
 
-    except Exception:
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return jsonify({
             "success": False,
-            "error": "Invalid URL format."
+            "error": "Please enter a valid website URL."
         }), 400
 
     headers = {
@@ -72,7 +68,7 @@ def scan_url():
 
     try:
 
-        # Send URL to VirusTotal
+        # VirusTotal URL submission
         response = requests.post(
             VT_SCAN_URL,
             headers=headers,
@@ -80,18 +76,13 @@ def scan_url():
             timeout=30
         )
 
-        if response.status_code not in [200, 201]:
+        print("VirusTotal response status:", response.status_code)
+        print("VirusTotal response:", response.text)
 
-            print(
-                "VirusTotal Error:",
-                response.status_code,
-                response.text
-            )
-
+        if response.status_code not in (200, 201):
             return jsonify({
                 "success": False,
                 "error": "VirusTotal could not scan this URL.",
-                "status_code": response.status_code,
                 "details": response.text
             }), response.status_code
 
@@ -99,10 +90,10 @@ def scan_url():
 
         analysis_id = scan_data["data"]["id"]
 
-        print("VirusTotal Analysis ID:", analysis_id)
+        print("Analysis ID:", analysis_id)
 
-        # Wait for VirusTotal analysis
         analysis = None
+        status = None
 
         for attempt in range(10):
 
@@ -115,13 +106,6 @@ def scan_url():
             )
 
             if analysis_response.status_code != 200:
-
-                print(
-                    "Analysis Error:",
-                    analysis_response.status_code,
-                    analysis_response.text
-                )
-
                 return jsonify({
                     "success": False,
                     "error": "Could not retrieve VirusTotal analysis.",
@@ -148,7 +132,6 @@ def scan_url():
                 break
 
         if not analysis:
-
             return jsonify({
                 "success": False,
                 "error": "No VirusTotal analysis received."
@@ -170,7 +153,7 @@ def scan_url():
         return jsonify({
             "success": True,
             "url": url,
-            "status": attributes.get("status"),
+            "status": status,
             "malicious": malicious,
             "suspicious": suspicious,
             "harmless": harmless,
