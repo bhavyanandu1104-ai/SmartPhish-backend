@@ -3,13 +3,11 @@ from flask_cors import CORS
 import requests
 import os
 import time
+from urllib.parse import urlparse
 
 app = Flask(__name__)
-
-# Allow your GitHub Pages frontend to communicate with the backend
 CORS(app)
 
-# VirusTotal API key is stored safely in Render Environment Variables
 API_KEY = os.environ.get("VIRUSTOTAL_API_KEY")
 
 VT_SCAN_URL = "https://www.virustotal.com/api/v3/urls"
@@ -24,14 +22,12 @@ def home():
 @app.route("/scan", methods=["POST"])
 def scan_url():
 
-    # Check API key
     if not API_KEY:
         return jsonify({
             "success": False,
             "error": "VirusTotal API key is not configured."
         }), 500
 
-    # Get JSON data
     data = request.get_json(silent=True)
 
     if not data or "url" not in data:
@@ -40,7 +36,6 @@ def scan_url():
             "error": "No URL provided."
         }), 400
 
-    # Get URL
     url = str(data["url"]).strip()
 
     if not url:
@@ -49,16 +44,34 @@ def scan_url():
             "error": "URL cannot be empty."
         }), 400
 
+    # Add HTTPS if the user did not enter a protocol
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    # Validate URL format
+    try:
+        parsed = urlparse(url)
+
+        if not parsed.scheme or not parsed.netloc:
+            return jsonify({
+                "success": False,
+                "error": "Please enter a valid website URL."
+            }), 400
+
+    except Exception:
+        return jsonify({
+            "success": False,
+            "error": "Invalid URL format."
+        }), 400
+
     headers = {
-        "x-apikey": API_KEY
+        "x-apikey": API_KEY,
+        "Accept": "application/json"
     }
 
     try:
 
-        # --------------------------------
-        # STEP 1: Send URL to VirusTotal
-        # --------------------------------
-
+        # Send URL to VirusTotal
         response = requests.post(
             VT_SCAN_URL,
             headers=headers,
@@ -66,8 +79,6 @@ def scan_url():
             timeout=30
         )
 
-        # If VirusTotal rejects the request,
-        # print the REAL error in Render Logs.
         if response.status_code not in [200, 201]:
 
             print(
@@ -85,24 +96,11 @@ def scan_url():
 
         scan_data = response.json()
 
-        # Get analysis ID
-        try:
-            analysis_id = scan_data["data"]["id"]
-        except (KeyError, TypeError):
+        analysis_id = scan_data["data"]["id"]
 
-            print("Unexpected VirusTotal response:", scan_data)
+        print("VirusTotal Analysis ID:", analysis_id)
 
-            return jsonify({
-                "success": False,
-                "error": "Invalid response received from VirusTotal.",
-                "details": scan_data
-            }), 500
-
-
-        # --------------------------------
-        # STEP 2: Check analysis status
-        # --------------------------------
-
+        # Wait for VirusTotal analysis
         analysis = None
 
         for attempt in range(10):
@@ -118,7 +116,7 @@ def scan_url():
             if analysis_response.status_code != 200:
 
                 print(
-                    "VirusTotal Analysis Error:",
+                    "Analysis Error:",
                     analysis_response.status_code,
                     analysis_response.text
                 )
@@ -126,7 +124,6 @@ def scan_url():
                 return jsonify({
                     "success": False,
                     "error": "Could not retrieve VirusTotal analysis.",
-                    "status_code": analysis_response.status_code,
                     "details": analysis_response.text
                 }), analysis_response.status_code
 
@@ -140,7 +137,7 @@ def scan_url():
             )
 
             print(
-                "VirusTotal Analysis Attempt:",
+                "Analysis attempt:",
                 attempt + 1,
                 "Status:",
                 status
@@ -149,16 +146,11 @@ def scan_url():
             if status == "completed":
                 break
 
-
-        # --------------------------------
-        # STEP 3: Read VirusTotal results
-        # --------------------------------
-
         if not analysis:
 
             return jsonify({
                 "success": False,
-                "error": "No analysis result received."
+                "error": "No VirusTotal analysis received."
             }), 500
 
         attributes = (
@@ -174,33 +166,22 @@ def scan_url():
         harmless = stats.get("harmless", 0)
         undetected = stats.get("undetected", 0)
 
-        status = attributes.get("status", "unknown")
-
-
-        # --------------------------------
-        # STEP 4: Return result to frontend
-        # --------------------------------
-
         return jsonify({
             "success": True,
             "url": url,
-            "status": status,
+            "status": attributes.get("status"),
             "malicious": malicious,
             "suspicious": suspicious,
             "harmless": harmless,
             "undetected": undetected
         }), 200
 
-
     except requests.exceptions.Timeout:
-
-        print("VirusTotal request timed out.")
 
         return jsonify({
             "success": False,
             "error": "VirusTotal request timed out."
         }), 504
-
 
     except requests.exceptions.RequestException as e:
 
@@ -212,10 +193,9 @@ def scan_url():
             "details": str(e)
         }), 500
 
-
     except Exception as e:
 
-        print("Unexpected Server Error:", str(e))
+        print("Unexpected Error:", str(e))
 
         return jsonify({
             "success": False,
