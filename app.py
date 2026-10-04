@@ -34,7 +34,7 @@ def scan():
 
         print("URL received from frontend:", repr(url))
 
-        # Add HTTPS if needed
+        # Add HTTPS if the URL has no protocol
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
 
@@ -64,7 +64,7 @@ def scan():
             VT_SCAN_URL,
             headers=headers,
             data={"url": url},
-            timeout=15
+            timeout=30
         )
 
         print("VirusTotal response status:", response.status_code)
@@ -87,21 +87,22 @@ def scan():
                 "error": "VirusTotal did not return an analysis ID."
             }), 500
 
+        # URL used to check analysis status
         analysis_url = (
             "https://www.virustotal.com/api/v3/analyses/"
             + analysis_id
         )
 
-        # Give VirusTotal enough time to finish.
-        # Check every 1 second for up to 20 seconds.
-        for attempt in range(20):
+        # Wait for VirusTotal analysis
+        # 10 checks × 2 seconds = up to 20 seconds
+        for attempt in range(10):
 
-            time.sleep(1)
+            time.sleep(2)
 
             analysis_response = requests.get(
                 analysis_url,
                 headers=headers,
-                timeout=10
+                timeout=15
             )
 
             print(
@@ -154,7 +155,7 @@ def scan():
                     "undetected": undetected
                 })
 
-        # Analysis did not finish within the allowed time
+        # VirusTotal did not finish within 20 seconds
         return jsonify({
             "success": False,
             "error": "VirusTotal analysis is taking longer than expected.",
@@ -182,4 +183,4 @@ def scan():
 
 if __name__ == "__main__":
     app.run()
-```
+
