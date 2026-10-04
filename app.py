@@ -35,7 +35,7 @@ def scan():
 
         print("URL received from frontend:", repr(url))
 
-        # Make sure the URL has a protocol
+        # Add HTTPS if needed
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
 
@@ -80,9 +80,7 @@ def scan():
 
         result = response.json()
 
-        analysis_id = (
-            result.get("data", {}).get("id")
-        )
+        analysis_id = result.get("data", {}).get("id")
 
         if not analysis_id:
             return jsonify({
@@ -90,15 +88,14 @@ def scan():
                 "error": "VirusTotal did not return an analysis ID."
             }), 500
 
-        # Check analysis status
         analysis_url = (
             "https://www.virustotal.com/api/v3/analyses/"
             + analysis_id
         )
 
-        # Faster polling:
-        # Check 5 times instead of 10
-        for attempt in range(5):
+        # Give VirusTotal enough time to finish.
+        # Check every 1 second for up to 20 seconds.
+        for attempt in range(20):
 
             time.sleep(1)
 
@@ -143,6 +140,11 @@ def scan():
                 harmless = stats.get("harmless", 0)
                 undetected = stats.get("undetected", 0)
 
+                print("Malicious:", malicious)
+                print("Suspicious:", suspicious)
+                print("Harmless:", harmless)
+                print("Undetected:", undetected)
+
                 return jsonify({
                     "success": True,
                     "url": url,
@@ -153,7 +155,7 @@ def scan():
                     "undetected": undetected
                 })
 
-        # If VirusTotal needs more time
+        # Analysis did not finish within the allowed time
         return jsonify({
             "success": False,
             "error": "VirusTotal analysis is taking longer than expected.",
